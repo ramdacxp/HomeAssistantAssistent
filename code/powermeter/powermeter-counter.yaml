@@ -1,0 +1,147 @@
+esphome:
+  name: "powermeter"
+
+esp8266:
+  board: esp01_1m
+
+# Enable logging
+logger:
+  level: DEBUG
+  baud_rate: 0
+
+# Enable Home Assistant API
+api:
+
+# Enable over-the-air updates
+ota:
+
+# Set WLAN credentials
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Powermeter-Web-Fallback"
+    password: "PowermeterSetup"
+
+captive_portal:
+
+# Use internal LED as status LED
+status_led:
+  pin:
+    number: GPIO2
+    inverted: true
+
+# Read serial IR signal from RX-pin (IR receiver LED with simple pull-up resistor)
+uart:
+  id: uart_bus
+  rx_pin: GPIO3
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+
+# SML decoding platform connected with serial pin
+# see log output for server id and list of available obis codes
+sml:
+  id: mysml
+  uart_id: uart_bus
+
+ # Global variables
+globals:
+  - id: powermeter_totalenergy_lastvalue
+    type: float
+    restore_value: False
+    initial_value: '0'
+
+# Buttons to trigger actons
+button:
+
+  # Restart the powermeter
+  - platform: restart
+    name: "Restart"
+    id: powermeter_restart
+
+  - platform: template
+    name: "Counter zurücksetzen"
+    id: powermeter_reset_totalpulses
+    on_press:
+      - pulse_meter.set_total_pulses:
+          id: powermeter_counter_current
+          value: 0
+
+  - platform: template
+    name: "Counter synchronisieren"
+    id: powermeter_sync_totalpulses
+    on_press:
+      - pulse_meter.set_total_pulses:
+          id: powermeter_counter_current
+          value: !lambda return id(powermeter_totalenergy).state * 10000.0;
+
+# Test sensor values
+text_sensor:
+
+  # Manufacturer of power meter (via SML platform)
+  - platform: sml
+    name: "Hersteller"
+    id: powermeter_manufacturer
+    icon: mdi:meter-electric-outline
+    sml_id: mysml
+    server_id: !secret powermeter_id
+    obis_code: "129-129:199.130.3"
+    format: text
+
+# Generic sensor values
+sensor:
+
+  # Total energy in kWh as measured by power meter (via SML platform)
+  - platform: sml
+    name: "Verbrauch Summe"
+    id: powermeter_totalenergy
+    icon: mdi:meter-electric-outline
+    sml_id: mysml
+    server_id: !secret powermeter_id
+    obis_code: "1-0:1.8.0"
+    unit_of_measurement: kWh
+    accuracy_decimals: 0
+    device_class: energy
+    state_class: total_increasing
+    on_value:
+      then:
+        # Value is reported avery 2 seconds; sync only if changed
+        - lambda: |-
+            if ( id(powermeter_totalenergy).state != id(powermeter_totalenergy_lastvalue) )
+            {
+              id(powermeter_sync_totalpulses).press();
+              id(powermeter_totalenergy_lastvalue) = id(powermeter_totalenergy).state;
+            }
+
+  # IR fire detector module connected to D8 (=GPIO12)
+  # Power meter outputs 10.000 IR pulses per kWh
+  # Pulse meter sensor counts pulses/minute
+  # -> usage in W: * 6
+  # -> usage in kW: * 0.006
+  - platform: pulse_meter
+    name: "Counter Aktuell"
+    id: powermeter_counter_current
+    pin: GPIO12
+    internal_filter: 100ms
+    icon: mdi:counter
+    accuracy_decimals: 1
+    unit_of_measurement: 'W'
+    filters:
+      - multiply: 6
+
+    total:
+      name: "Counter Summe"
+      id: powermeter_counter_total
+      unit_of_measurement: 'kWh'
+      icon: mdi:counter
+      device_class: energy
+      state_class: total_increasing
+      accuracy_decimals: 3
+      filters:
+        # -> total usage in Wh: * 0.1
+        # -> total usage in kWh: * 0.0001
+        - multiply: 0.0001

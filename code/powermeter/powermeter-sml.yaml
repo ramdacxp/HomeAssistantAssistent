@@ -1,0 +1,105 @@
+esphome:
+  name: "powermeter"
+
+esp8266:
+  board: esp01_1m
+
+# Enable logging
+logger:
+  level: DEBUG
+  baud_rate: 0
+
+# Enable Home Assistant API
+api:
+
+# Enable over-the-air updates
+ota:
+
+# Set WLAN credentials
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Powermeter-Web-Fallback"
+    password: "PowermeterSetup"
+
+captive_portal:
+
+# Use internal LED as status LED
+status_led:
+  pin:
+    number: GPIO2
+    inverted: true
+
+# Read serial IR signal from RX-pin (IR receiver LED with simple pull-up resistor)
+uart:
+  id: uart_bus
+  rx_pin: GPIO3
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+
+# SML decoding platform connected with serial pin
+# see log output for server id and list of available obis codes
+sml:
+  id: mysml
+  uart_id: uart_bus
+
+# Buttons to trigger actons
+button:
+
+  # Restart the powermeter
+  - platform: restart
+    name: "Restart"
+    id: powermeter_restart
+
+# Text sensor values
+text_sensor:
+
+  # Manufacturer of power meter (via SML platform)
+  - platform: sml
+    name: "Hersteller"
+    id: powermeter_manufacturer
+    icon: mdi:meter-electric-outline
+    sml_id: mysml
+    server_id: !secret powermeter_id
+    obis_code: "129-129:199.130.3"
+    format: text
+
+# Generic sensor values
+sensor:
+
+  # Total energy in kWh as measured by power meter (via SML platform)
+  - platform: sml
+    name: "Verbrauch Summe"
+    id: powermeter_totalenergy
+    icon: mdi:meter-electric-outline
+    sml_id: mysml
+    server_id: !secret powermeter_id
+    obis_code: "1-0:1.8.0"
+    unit_of_measurement: kWh
+    accuracy_decimals: 1
+    device_class: energy
+    state_class: total_increasing
+    filters:
+      # If powermeter is in advanced mode, instead of full kWh 4 more digits are reported
+      # Then accuracy can be changed from 0 to 1 decimals
+      - multiply: 0.0001
+
+  # Sum active instantaneous power (A+ - A-) [kW] (via SML platform)
+  - platform: sml
+    name: "Verbrauch Aktuell"
+    id: powermeter_currentpower
+    icon: mdi:meter-electric-outline
+    sml_id: mysml
+    server_id: !secret powermeter_id
+    obis_code: "1-0:16.7.0"
+    unit_of_measurement: W
+    accuracy_decimals: 0
+    device_class: energy
+    state_class: measurement
+    filters:
+      - multiply: 0.1
